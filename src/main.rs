@@ -2,15 +2,14 @@ use bytemuck:: {Pod, Zeroable, cast_slice};
 use cgmath::Matrix4;
 use wgpu::{util::DeviceExt, StoreOp};
 use winit::{
-    event::{Event, WindowEvent}, 
-    event_loop::{ControlFlow, EventLoop}, 
-    window::{Window, WindowBuilder}
+    dpi::PhysicalPosition, event::{Event, WindowEvent}, event_loop::EventLoop, window::{Window, WindowBuilder}
 };
 
 mod transforms;
 mod vertex_data;
 
 const IS_PERSPECTIVE:bool = true;
+const ANIMATION_SPEED:f32 = 1.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -44,9 +43,11 @@ fn create_vertices() -> Vec<Vertex> {
     let pos = vertex_data::cube_positions();
     let col = vertex_data::cube_colors();
     let mut data:Vec<Vertex> = Vec::with_capacity(pos.len());
+
     for i in 0..pos.len() {
         data.push(vertex(pos[i], col[i]));
     }
+
     data.to_vec()
 }
 
@@ -192,14 +193,35 @@ impl<'window> State<'window> {
         false
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self, dt: std::time::Duration) {
+        // update uniform buffer
+        let dt = ANIMATION_SPEED * dt.as_secs_f32(); 
+        let model_matrix = transforms::create_transforms([0.0,0.0,0.0], [dt.sin(), dt.cos(), 0.0], [1.0, 1.0, 1.0]);
+        let mvp_matrix = self.projection_matrix * self.view_matrix * model_matrix;        
+        let mvp_ref:&[f32; 16] = mvp_matrix.as_ref();
+        self.init.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(mvp_ref));
+    }
+
+    fn update_mouse(&mut self, position: PhysicalPosition<f64>) {
+        let model_matrix = transforms::create_transforms([0.0, 0.0, 0.0], [-(position.y/100.00) as f32, (position.x/100.00) as f32, 0.0], [1.0, 1.0, 1.0]);
+        let mvp_matrix = self.projection_matrix * self.view_matrix * model_matrix;        
+        let mvp_ref:&[f32; 16] = mvp_matrix.as_ref();
+
+        println!("Mouse position: ({}, {})", position.x, position.y);
+
+        
+        self.init.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(mvp_ref))
+    }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         //let output = self.init.surface.get_current_frame()?.output;
+        print!("dasdas");
+
         let output = self.init.surface.get_current_texture()?;
         let view = output
             .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());  
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
         let depth_texture = self.init.device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: self.init.config.width,
@@ -271,20 +293,31 @@ fn main() {
     window.set_title(&*format!("{}", "cube with distinct face colors"));
 
     let mut state = pollster::block_on(State::new(&window));
+    let start_time = std::time::Instant::now();
 
-    event_loop.set_control_flow(ControlFlow::Wait);
-
-
-    let _ = event_loop.run(move |event, event_loop_window| {
-
+    event_loop.run(move |event, event_loop_window| {
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 println!("The close button was pressed; stopping");
                 event_loop_window.exit();
             },
 
+            Event::WindowEvent { event: WindowEvent::CursorMoved { position, ..}, .. } => {
+                state.update_mouse(position);
+
+                match state.render() {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => state.resize(state.init.size),
+                    Err(wgpu::SurfaceError::OutOfMemory) => event_loop_window.exit(),
+                    Err(e) => eprintln!("{:?}", e),
+                }
+            }
+
             Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
-                state.update();
+                let now = std::time::Instant::now();
+                let dt = now - start_time;
+
+                state.update(dt);
 
                 match state.render() {
                     Ok(_) => {}
@@ -300,5 +333,5 @@ fn main() {
 
             _ => {}
         }
-    });
+    }).unwrap();
 }
