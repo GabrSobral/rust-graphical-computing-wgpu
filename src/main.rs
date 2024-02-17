@@ -56,9 +56,9 @@ struct State<'window> {
     vertex_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group:wgpu::BindGroup,
-    model_mat: Matrix4<f32>,
-    view_mat: Matrix4<f32>,
-    project_mat: Matrix4<f32>,
+    model_matrix: Matrix4<f32>,
+    view_matrix: Matrix4<f32>,
+    projection_matrix: Matrix4<f32>,
 }
 
 impl<'window> State<'window> {
@@ -75,10 +75,10 @@ impl<'window> State<'window> {
         let look_direction = (0.0,0.0,0.0).into();
         let up_direction = cgmath::Vector3::unit_y();
         
-        let model_mat = transforms::create_transforms([0.0,0.0,0.0], [0.0,0.0,0.0], [1.0,1.0,1.0]);
-        let (view_mat, project_mat, view_project_mat) = 
+        let model_matrix = transforms::create_transforms([0.0,0.0,0.0], [0.0,0.0,0.0], [1.0,1.0,1.0]);
+        let (view_matrix, projection_matrix, view_projection_matrix) = 
             transforms::create_view_projection(camera_position, look_direction, up_direction, init.config.width as f32 / init.config.height as f32, IS_PERSPECTIVE);
-        let mvp_mat = view_project_mat * model_mat;
+        let mvp_mat = view_projection_matrix * model_matrix;
         
         let mvp_ref:&[f32; 16] = mvp_mat.as_ref();
         let uniform_buffer = init.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -166,9 +166,9 @@ impl<'window> State<'window> {
             vertex_buffer,
             uniform_buffer,
             uniform_bind_group,
-            model_mat,
-            view_mat,
-            project_mat,
+            model_matrix,
+            view_matrix,
+            projection_matrix,
         }
     }
 
@@ -180,8 +180,8 @@ impl<'window> State<'window> {
             self.init.config.height = new_size.height;
             self.init.surface.configure(&self.init.device, &self.init.config);
 
-            self.project_mat = transforms::create_projection(new_size.width as f32 / new_size.height as f32, IS_PERSPECTIVE);
-            let mvp_mat = self.project_mat * self.view_mat * self.model_mat;        
+            self.projection_matrix = transforms::create_projection(new_size.width as f32 / new_size.height as f32, IS_PERSPECTIVE);
+            let mvp_mat = self.projection_matrix * self.view_matrix * self.model_matrix;        
             let mvp_ref:&[f32; 16] = mvp_mat.as_ref();
             self.init.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(mvp_ref));
         }
